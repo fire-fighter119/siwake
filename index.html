@@ -9,23 +9,19 @@
   .wrap{max-width:1100px;margin:auto;padding:24px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
   h1{font-size:20px;margin:0 0 8px} h2{font-size:16px;margin:0 0 12px}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px} .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-  @media (max-width:800px){.row,.row-3{grid-template-columns:1fr}}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:800px){.row{grid-template-columns:1fr}}
   label{font-size:12px;color:var(--muted);display:block;margin:6px 0}
   input,select,button,textarea{font:inherit}
-  input[type="text"],input[type="number"],input[type="date"],select,textarea{
-    width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff
-  }
+  input[type="text"],input[type="number"],input[type="date"],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
   .btn{padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer}
   .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
-  .btn.ghost{background:#fff}
   .stack{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .right{margin-left:auto}
   table{width:100%;border-collapse:collapse}
   th,td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:14px;text-align:left}
   th{background:#fafafa;color:#374151}
   .num{text-align:right}
-  details summary{cursor:pointer;color:#334155}
   small.muted{color:var(--muted)}
 </style>
 
@@ -43,13 +39,14 @@
     <div class="row">
       <div>
         <label>Apps Script WebアプリURL（/exec）</label>
-        <input id="webhook" type="url" placeholder="https://script.google.com/macros/s/AKfycbz2-WXiCSPZLlwl0jQAesvSbfRiVX9hXPosmwOJpaEARA9TyN59jvjUJl3EBdMe4Q63TQ/exec
-">
-        <small class="muted">同じブック内の<strong>「事業」</strong>に追記します（公開は「全員」推奨）</small>
+        <input id="webhook" type="url"
+          
+               placeholder="https://script.google.com/macros/s/AKfycbwvTSa8GzN_wuE1t9JfMyfV_GmvwPU3wKdbB45eo77gD7HK7NAu2bWouZST9qZDYdSfGw/exec">
+        <small class="muted">同じブック内の<strong>「事業」</strong>に追記します（GASの公開は「全員」推奨）</small>
       </div>
       <div>
-        <label>（任意）簡易トークン</label>
-        <input id="token" type="text" placeholder="REQUIRE_TOKEN を true にした場合のみ">
+        <label>（任意）簡易メモ</label>
+        <input id="token" type="text" placeholder="使わないなら空でOK">
         <div class="stack" style="margin-top:8px">
           <button class="btn" id="saveUrlBtn">URLを保存</button>
           <button class="btn" id="clearUrlBtn">保存を消す</button>
@@ -62,25 +59,16 @@
   <!-- 入力 -->
   <section class="card" style="margin-top:12px">
     <div class="stack" style="margin-bottom:8px">
-      <button class="btn" id="modeExpense">支出の登録</button>
+      <button class="btn primary" id="modeExpense">支出の登録</button>
       <button class="btn" id="modeIncome">収入の登録</button>
       <span class="right"></span>
       <small class="muted">税込チェック時は簡便法で本体/消費税に自動按分</small>
     </div>
 
     <div class="row">
-      <div>
-        <label>日付</label>
-        <input type="date" id="date">
-      </div>
-      <div>
-        <label>摘要（メモ）</label>
-        <input type="text" id="desc" placeholder="用途や相手先など">
-      </div>
-      <div>
-        <label>金額（円）</label>
-        <input type="number" inputmode="numeric" id="amount" placeholder="0">
-      </div>
+      <div><label>日付</label><input type="date" id="date"></div>
+      <div><label>摘要（メモ）</label><input type="text" id="desc" placeholder="用途や相手先など"></div>
+      <div><label>金額（円）</label><input type="number" inputmode="numeric" id="amount" placeholder="0"></div>
 
       <div id="expenseAccountWrap">
         <label>費用の勘定科目</label>
@@ -123,9 +111,9 @@
       <button class="btn" id="clearBtn">クリア</button>
       <span class="right"></span>
       <small class="muted">テンプレ:</small>
-      <button class="btn ghost" id="tplStationery">文具（現金）</button>
-      <button class="btn ghost" id="tplPhone">通信費（口座）</button>
-      <button class="btn ghost" id="tplSalesBank">売上入金（銀行）</button>
+      <button class="btn" id="tplStationery">文具（現金）</button>
+      <button class="btn" id="tplPhone">通信費（口座）</button>
+      <button class="btn" id="tplSalesBank">売上入金（銀行）</button>
     </div>
   </section>
 
@@ -151,87 +139,71 @@
       </table>
     </div>
   </section>
-
-  <section style="margin-top:12px">
-    <details class="card">
-      <summary><strong>使い方 / 仕組み</strong></summary>
-      <ul>
-        <li>支出：借方=費用、本体/税は自動按分（税込チェック時）、貸方=現金/普通預金/未払金</li>
-        <li>収入：借方=現金/普通預金/売掛金、貸方=売上高 等</li>
-        <li>「全件を事業へ送信」で GAS Webアプリ（/exec）へPOST。<small class="muted">no-cors + text/plain</small></li>
-      </ul>
-    </details>
-  </section>
 </div>
 
 <script>
 /* ===== マスタ ===== */
 const EXPENSE_ACCOUNTS = ["旅費交通費","通信費","消耗品費","地代家賃","水道光熱費","広告宣伝費","租税公課","支払手数料","新聞図書費","雑費"];
-const INCOME_ACCOUNTS = ["売上高","雑収入"];
+const INCOME_ACCOUNTS  = ["売上高","雑収入"];
 const PAYMENT_METHODS  = [
   { key:"cash", label:"現金",            credit:"現金" },
   { key:"bank", label:"銀行振込（普通預金）", credit:"普通預金" },
   { key:"card", label:"クレジットカード",    credit:"未払金" }
 ];
 const RECEIVABLE_METHODS = [
-  { key:"cash", label:"現金受取",       debit:"現金" },
+  { key:"cash", label:"現金受取",         debit:"現金" },
   { key:"bank", label:"銀行入金（普通預金）", debit:"普通預金" },
-  { key:"ar",   label:"掛け（売掛金）",  debit:"売掛金" }
+  { key:"ar",   label:"掛け（売掛金）",    debit:"売掛金" }
 ];
-/* ===== 状態 ===== */
-let MODE = "expense"; // "expense" | "income"
-let ROWS = [];        // 入力済み
 
-/* ===== ユーティリティ ===== */
+/* ===== 状態・ユーティリティ ===== */
+let MODE = "expense"; // "expense" | "income"
+let ROWS = [];
+
 const $ = s => document.querySelector(s);
-function todayISO(){ const d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
-function toYen(n){ try{return Number(n).toLocaleString("ja-JP")}catch{return n}}
+function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function toYen(n){ try{return Number(n).toLocaleString("ja-JP")}catch{return n} }
 function csvEsc(s){ s=String(s??""); return (/,|\n|"/.test(s)) ? `"${s.replaceAll('"','""')}"` : s; }
 
 /* ===== 初期化 ===== */
 window.addEventListener('DOMContentLoaded', () => {
-  // URL/Token 保存
+  // URL保存
   const savedUrl = localStorage.getItem('journal_webhook_url') || '';
-  const savedTok = localStorage.getItem('journal_token') || '';
   $('#webhook').value = savedUrl;
-  $('#token').value = savedTok;
   $('#savedNote').textContent = savedUrl ? 'この端末に保存済み' : '';
 
   $('#saveUrlBtn').onclick = () => {
     localStorage.setItem('journal_webhook_url', $('#webhook').value.trim());
-    localStorage.setItem('journal_token', $('#token').value.trim());
     $('#savedNote').textContent = '保存しました';
   };
   $('#clearUrlBtn').onclick = () => {
     localStorage.removeItem('journal_webhook_url');
-    localStorage.removeItem('journal_token');
-    $('#webhook').value = ''; $('#token').value='';
-    $('#savedNote').textContent = '保存を消しました';
+    $('#webhook').value = ''; $('#savedNote').textContent = '保存を消しました';
   };
 
-  // セレクト作成
-  EXPENSE_ACCOUNTS.forEach(a => { const o=document.createElement('option'); o.value=a;o.textContent=a; $('#expenseAccount').appendChild(o); });
-  INCOME_ACCOUNTS.forEach(a => { const o=document.createElement('option'); o.value=a;o.textContent=a; $('#incomeAccount').appendChild(o); });
-  PAYMENT_METHODS.forEach(p => { const o=document.createElement('option'); o.value=p.key;o.textContent=p.label; $('#payment').appendChild(o); });
-  RECEIVABLE_METHODS.forEach(r => { const o=document.createElement('option'); o.value=r.key;o.textContent=r.label; $('#receive').appendChild(o); });
+  // セレクト
+  for (const a of EXPENSE_ACCOUNTS){ const o=document.createElement('option'); o.value=a;o.textContent=a; $('#expenseAccount').appendChild(o); }
+  for (const a of INCOME_ACCOUNTS ){ const o=document.createElement('option'); o.value=a;o.textContent=a; $('#incomeAccount').appendChild(o); }
+  for (const p of PAYMENT_METHODS ){ const o=document.createElement('option'); o.value=p.key;o.textContent=p.label; $('#payment').appendChild(o); }
+  for (const r of RECEIVABLE_METHODS){ const o=document.createElement('option'); o.value=r.key;o.textContent=r.label; $('#receive').appendChild(o); }
 
-  // デフォルト
+  // 既定値
   $('#date').value = todayISO();
   $('#expenseAccount').value = "消耗品費";
   $('#payment').value = "cash";
   $('#incomeAccount').value = "売上高";
   $('#receive').value = "bank";
-  $('#taxIn').checked = true;
-  $('#taxRate').value = "10";
+  $('#taxIn').checked = true; $('#taxRate').value = "10";
 
   // イベント
   $('#modeExpense').onclick = () => setMode('expense');
   $('#modeIncome').onclick = () => setMode('income');
-  $('#addBtn').onclick = addOrUpdate;
-  $('#clearBtn').onclick = clearInputs;
+  $('#addBtn').onclick = addRow;
+  $('#clearBtn').onclick = () => { $('#desc').value=''; $('#amount').value=''; };
   $('#csvBtn').onclick = downloadCSV;
   $('#sendAllBtn').onclick = sendAll;
   $('#clearAllBtn').onclick = () => { if(confirm('全削除しますか？')){ ROWS=[]; render(); } };
+
   $('#tplStationery').onclick = () => { setMode('expense'); $('#date').value=todayISO(); $('#desc').value='コンビニで文具購入'; $('#amount').value='1200'; $('#expenseAccount').value='消耗品費'; $('#payment').value='cash'; $('#taxIn').checked=true; $('#taxRate').value='10'; updateTaxInfo(); };
   $('#tplPhone').onclick     = () => { setMode('expense'); $('#date').value=todayISO(); $('#desc').value='スマホ通信料';     $('#amount').value='4980'; $('#expenseAccount').value='通信費';   $('#payment').value='bank'; $('#taxIn').checked=true; $('#taxRate').value='10'; updateTaxInfo(); };
   $('#tplSalesBank').onclick = () => { setMode('income');  $('#date').value=todayISO(); $('#desc').value='売上入金（銀行）'; $('#amount').value='10000';$('#incomeAccount').value='売上高';  $('#receive').value='bank'; };
@@ -240,12 +212,12 @@ window.addEventListener('DOMContentLoaded', () => {
   $('#taxIn').addEventListener('change', updateTaxInfo);
   $('#taxRate').addEventListener('change', updateTaxInfo);
 
-  render();
   updateTaxInfo();
+  render();
 });
 
 function setMode(m){
-  MODE = m;
+  MODE=m;
   $('#modeExpense').classList.toggle('primary', m==='expense');
   $('#modeIncome').classList.toggle('primary', m==='income');
   $('#expenseAccountWrap').style.display = m==='expense' ? '' : 'none';
@@ -265,11 +237,6 @@ function updateTaxInfo(){
   $('#taxInfo').textContent = `内税: 本体 ${toYen(base)} 円 / 消費税 ${toYen(tax)} 円`;
 }
 
-function clearInputs(){
-  $('#desc').value='';
-  $('#amount').value='';
-}
-
 function buildEntries(){
   const amt = Number($('#amount').value || 0);
   if (!amt || amt<=0) return [];
@@ -279,24 +246,24 @@ function buildEntries(){
     const base = (!inTax||rate===0)? amt : Math.round((amt*100)/(100+rate));
     const tax  = (!inTax||rate===0)? 0   : amt-base;
     const expenseAccount = $('#expenseAccount').value;
-    const payment = $('#payment').value;
-    const credit = (PAYMENT_METHODS.find(p=>p.key===payment)?.credit)||'現金';
+    const paymentKey = $('#payment').value;
+    const credit = (PAYMENT_METHODS.find(p=>p.key===paymentKey)?.credit)||'現金';
     const entries = [{side:'借方', account:expenseAccount, amount:base}];
     if (tax>0) entries.push({side:'借方', account:'租税公課（消費税等）', amount:tax});
     entries.push({side:'貸方', account:credit, amount:amt});
     return entries;
   } else {
-    const receive = $('#receive').value;
-    const debit = (RECEIVABLE_METHODS.find(r=>r.key===receive)?.debit)||'普通預金';
+    const recvKey = $('#receive').value;
+    const debit = (RECEIVABLE_METHODS.find(r=>r.key===recvKey)?.debit)||'普通預金';
     const incomeAccount = $('#incomeAccount').value;
     return [{side:'借方', account:debit, amount:amt},{side:'貸方', account:incomeAccount, amount:amt}];
   }
 }
 
-function addOrUpdate(){
+function addRow(){
   const entries = buildEntries();
   if (entries.length===0) return alert('金額を入れてください');
-  const row = {
+  ROWS.unshift({
     date: $('#date').value,
     desc: $('#desc').value,
     mode: MODE,
@@ -308,9 +275,8 @@ function addOrUpdate(){
     incomeAccount: $('#incomeAccount').value,
     receive: $('#receive').value,
     entries
-  };
-  ROWS.unshift(row);
-  clearInputs();
+  });
+  $('#desc').value=''; $('#amount').value='';
   render();
 }
 
@@ -322,7 +288,7 @@ function render(){
     const credits = r.entries.filter(e=>e.side==='貸方');
     const max = Math.max(debits.length, credits.length);
     for(let line=0; line<max; line++){
-      const d = debits[line] || {account:'', amount:''};
+      const d = debits[line]  || {account:'', amount:''};
       const c = credits[line] || {account:'', amount:''};
       const tr = document.createElement('tr');
       if (line===0){
@@ -341,7 +307,7 @@ function render(){
               <button class="btn" data-del="${idx}">削除</button>
             </div>
           </td>`;
-      }else{
+      } else {
         tr.innerHTML = `
           <td>${d.account}</td>
           <td class="num">${d.amount?toYen(d.amount):''}</td>
@@ -352,7 +318,6 @@ function render(){
     }
   });
 
-  // 操作
   tb.querySelectorAll('button[data-del]').forEach(b=>{
     b.onclick = () => { const i=Number(b.dataset.del); ROWS.splice(i,1); render(); }
   });
@@ -365,107 +330,77 @@ function render(){
 function downloadCSV(){
   const header = ["日付","摘要","区分","金額","税込処理","税率","借方科目","借方金額","貸方科目","貸方金額"];
   const lines = [header.join(",")];
-  ROWS.forEach(r=>{
+  for (const r of ROWS){
     const debits  = r.entries.filter(e=>e.side==='借方');
     const credits = r.entries.filter(e=>e.side==='貸方');
     const max = Math.max(debits.length, credits.length);
     for(let i=0;i<max;i++){
       const d=debits[i]||{account:"",amount:""};
       const c=credits[i]||{account:"",amount:""};
-      const cols = [
+      lines.push([
         r.date, r.desc, (r.mode==='expense'?'支出':'収入'), r.amount,
         r.taxIn?'税込':'税抜', r.taxRate+'%',
         d.account, d.amount, c.account, c.amount
-      ].map(csvEsc);
-      lines.push(cols.join(","));
+      ].map(csvEsc).join(","));
     }
-  });
+  }
   const blob = new Blob(["\uFEFF"+lines.join("\n")], {type:"text/csv"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download=`journal_${todayISO()}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
-// 表示用のカード名（最初は固定でOK。必要になったら入力欄を作って置き換える）
-function currentCardLabel() {
-  return "VISA末1234";  // ←ここはあなたのカード名/末4桁などに自由に変更OK
-}
 
-// 請求月の計算（例：末締→翌月請求。15日締などにしたい時は第2引数を15に）
-function calcBillingMonth(isoDate /* 'YYYY-MM-DD' */, closingDay = 31) {
-  const d = new Date(isoDate);
-  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
-  if (closingDay === 31) {                 // 末締→翌月
-    const nm = new Date(y, m + 1, 1);
-    return nm.toISOString().slice(0, 7);   // 'YYYY-MM'
-  }
-  const add = day <= closingDay ? 1 : 2;   // 15日締の例
-  const nm = new Date(y, m + add, 1);
-  return nm.toISOString().slice(0, 7);
+/* ===== GAS 送信 ===== */
+// 表示用カード名（必要なら書き換え）
+function currentCardLabel(){ return "VISA末1234"; }
+// 末締→翌月請求の例（請求月列に入れる）
+function calcBillingMonth(isoDate, closingDay=31){
+  const d = new Date(isoDate); const y=d.getFullYear(), m=d.getMonth(), day=d.getDate();
+  if (closingDay===31){ return new Date(y, m+1, 1).toISOString().slice(0,7); }
+  const add = day<=closingDay ? 1 : 2; return new Date(y, m+add, 1).toISOString().slice(0,7);
 }
-
-/* ===== GAS送信 ===== */
-// 「事業」シートに送る行を作る（★カード / ★請求月 を追加）
-function buildSheetLines(targetRows) {
-  // 列構成: [日付, 摘要, 区分, 金額, 税込/税率, 借方科目, 借方金額, 貸方科目, 貸方金額, 手段, 送信時刻, ★カード, ★請求月]
-  const out = [];
-  targetRows.forEach((r) => {
-    const debits  = r.entries.filter((e) => e.side === "借方");
-    const credits = r.entries.filter((e) => e.side === "貸方");
+// シートに送る行を作成（★カード/★請求月付き）
+function buildSheetLines(targetRows){
+  const out=[];
+  for (const r of targetRows){
+    const debits  = r.entries.filter(e=>e.side==='借方');
+    const credits = r.entries.filter(e=>e.side==='貸方');
     const max = Math.max(debits.length, credits.length);
-    for (let i = 0; i < max; i++) {
-      const d = debits[i]  || { account: "", amount: "" };
-      const c = credits[i] || { account: "", amount: "" };
-
-      // 支払手段の表示（貸方：現金/普通預金/未払金、収入の時は借方：現金/普通預金/売掛金）
-      const methodLabel = r.mode === "expense"
-        ? (PAYMENT_METHODS.find(p => p.key === r.payment)?.credit || "現金")
-        : (RECEIVABLE_METHODS.find(x => x.key === r.receive)?.debit || "普通預金");
-
-      // カード利用時だけ「カード」「請求月」を付ける
-      const isCard = (r.mode === "expense") && ((PAYMENT_METHODS.find(p => p.key === r.payment)?.key) === "card");
+    for (let i=0;i<max;i++){
+      const d = debits[i] || {account:"",amount:""};
+      const c = credits[i]|| {account:"",amount:""};
+      const methodLabel = r.mode==="expense"
+        ? (PAYMENT_METHODS.find(p=>p.key===r.payment)?.credit || "現金")
+        : (RECEIVABLE_METHODS.find(x=>x.key===r.receive)?.debit || "普通預金");
+      const isCard = (r.mode==="expense") && (r.payment==="card");
       const cardCol = isCard ? currentCardLabel() : "";
-      const billCol = isCard ? calcBillingMonth(r.date, 31) : ""; // 末締→翌月の例
-
+      const billCol = isCard ? calcBillingMonth(r.date, 31) : ""; // 末締→翌月
       out.push([
-        r.date,                                            // A: 日付
-        r.desc,                                            // B: 摘要
-        r.mode === "expense" ? "支出" : "収入",            // C: 区分
-        r.amount,                                          // D: 金額
-        r.taxIn ? `税込(${r.taxRate}%)` : "税抜",         // E: 税込/税率
-        d.account,                                         // F: 借方科目
-        d.amount,                                          // G: 借方金額
-        c.account,                                         // H: 貸方科目
-        c.amount,                                          // I: 貸方金額
-        methodLabel,                                       // J: 手段
-        new Date().toLocaleString("ja-JP"),                // K: 送信時刻
-        cardCol,                                           // L: ★カード
-        billCol                                            // M: ★請求月(YYYY-MM)
+        r.date, r.desc, (r.mode==='expense'?'支出':'収入'), r.amount,
+        r.taxIn ? `税込(${r.taxRate}%)` : '税抜',
+        d.account, d.amount, c.account, c.amount,
+        methodLabel, new Date().toLocaleString("ja-JP"),
+        cardCol, billCol
       ]);
     }
-  });
+  }
   return out;
 }
 
-
 async function postToGAS(lines){
   const url = $('#webhook').value.trim();
-  const token = ($('#token').value||'').trim();
-  if (!url) { alert('WebアプリURLを設定してください'); return {ok:false}; }
+  if (!url) { alert('WebアプリURL（/exec）を設定してください'); return {ok:false}; }
   try{
     await fetch(url, {
       method:'POST',
-      mode:'no-cors', // レスポンスは読まない前提
+      mode:'no-cors',                           // ← レスポンスは読まずに確実投函
       headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        sheet:'事業',
-        rows: lines,
-        ...(token ? { token } : {})
-      })
+      body: JSON.stringify({ sheet:'事業', rows: lines })
     });
     return {ok:true, opaque:true};
   }catch(e){
     console.error(e);
-    alert('送信に失敗：Webアプリ公開設定（全員）・URL・権限を確認してください');
+    alert('送信に失敗：GASの公開設定（全員）／URL（/exec）／再デプロイを確認してください');
     return {ok:false};
   }
 }
@@ -474,14 +409,14 @@ async function sendOne(i){
   const r = ROWS[i]; if(!r) return;
   const lines = buildSheetLines([r]);
   const res = await postToGAS(lines);
-  if (res.ok) alert('1件送信しました。シート「事業」をご確認ください。');
+  if (res.ok) alert('1件送信しました（シート「事業」を確認）');
 }
 
 async function sendAll(){
   if (ROWS.length===0) return alert('送信する仕分けがありません');
   const lines = buildSheetLines(ROWS);
   const res = await postToGAS(lines);
-  if (res.ok) alert(`${ROWS.length}件送信しました。シート「事業」をご確認ください。`);
+  if (res.ok) alert(`${ROWS.length}件送信しました（シート「事業」を確認）`);
 }
 </script>
 </body>
