@@ -2,33 +2,34 @@
 <meta charset="utf-8">
 <title>仕分け送信テスト</title>
 <h3>GAS /exec URL</h3>
-<input id="u" size="80" placeholder="https://script.google.com/macros/s/.../exec">
+<input id="u" size="100" placeholder="https://script.google.com/macros/s/.../exec">
 <button id="b">送信</button>
 <p style="font-size:12px;color:#555">送信後、スプレッドシートの「事業」に行が増えればOK</p>
 <script>
-document.getElementById('u').value =
-  "https://script.google.com/macros/s/AKfycbx4ThxklRmYu3UnpW9WWbNKX4_VD210HFPnstDxjmoyfMSU9VF_HAbQPXL1kIk4RZ2SSA/exec";
-document.getElementById('b').onclick = async () => {
-  const url = document.getElementById('u').value.trim();
-  if (!url) return alert('URLを入れてください');
-  const sample = {
-    sheet: "事業",
-    rows: [[
-      new Date().toISOString().slice(0,10),
-      "テスト送信（Pages）", "支出", 1234, "税込(10%)",
-      "消耗品費", 1122, "現金", 1234, "現金", new Date().toLocaleString("ja-JP")
-    ]]
+  // あなたの最新WebアプリURL（x4…）を既定でセット
+  document.getElementById('u').value =
+    "https://script.google.com/macros/s/AKfycbx4ThxklRmYu3UnpW9WWbNKX4_VD210HFPnstDxjmoyfMSU9VF_HAbQPXL1kIk4RZ2SSA/exec";
+  document.getElementById('b').onclick = async () => {
+    const url = document.getElementById('u').value.trim();
+    if (!url) return alert('URLを入れてください');
+    const sample = {
+      sheet: "事業",
+      rows: [[
+        new Date().toISOString().slice(0,10),
+        "テスト送信（Pages）", "支出", 1234, "税込(10%)",
+        "消耗品費", 1122, "現金", 1234, "現金", new Date().toLocaleString("ja-JP")
+      ]]
+    };
+    try {
+      await fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {"Content-Type":"text/plain;charset=utf-8"},
+        body: JSON.stringify(sample)
+      });
+      alert("送ったよ！スプレッドシートの「事業」を見てね。");
+    } catch (e) {
+      alert("送信失敗: " + e);
+    }
   };
-  try {
-    await fetch(url, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {"Content-Type":"text/plain;charset=utf-8"},
-      body: JSON.stringify(sample)
-    });
-    alert("送ったよ！スプレッドシートの「事業」を見てね。");
-  } catch (e) {
-    alert("送信失敗: " + e);
-  }
-};
 </script>
