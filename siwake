@@ -5,9 +5,8 @@ import React, { useEffect, useMemo, useState } from "react";
 // - よく使う勘定科目をプリセット
 // - 支払方法に応じて相手科目（現金/普通預金/未払金）を自動判定
 // - CSVエクスポート、行の編集/削除、テンプレ即入力
-// - ★Google スプレッドシート（同一ブック内の「事業」シート）に送信できるように対応
-//   → Apps Script の Web アプリURL を設定すると、1行/全件の送信が可能
-//   → CORSエラー時は自動で no-cors 送信にフォールバックします
+// - Googleスプレッドシートの「事業」シートへ送信（GASのWebアプリURLを使用）
+//   → CORSが面倒なので、no-cors + text/plain に固定して確実に届く運用
 
 const EXPENSE_ACCOUNTS = [
   "旅費交通費",
@@ -76,15 +75,19 @@ export default function JournalSorterApp() {
   const [rows, setRows] = useState([]);
   const [editIndex, setEditIndex] = useState(-1);
 
-  // GAS 連携設定
+  // GAS 連携設定（URLは localStorage 優先、無ければあなたの最新デプロイURL）
   const [webhookUrl, setWebhookUrl] = useState("");
   useEffect(() => {
-    const saved = localStorage.getItem("journal_webhook_url");
-    const fallback = "https://script.google.com/macros/s/AKfycbwlM0VxQts9DNrT4hiOS2UUIOeGWNWxrK_Gb8wNFYx9bVrOtNzcCmvzglip5e_4Tm5vWg/exec";
-    setWebhookUrl(saved && saved.trim().length > 0 ? saved : fallback);
+    const saved = (localStorage.getItem("journal_webhook_url") || "").trim();
+    const fallback =
+      "https://script.google.com/macros/s/AKfycbwlM0VxQts9DNrT4hiOS2UUIOeGWNWxrK_Gb8wNFYx9bVrOtNzcCmvzglip5e_4Tm5vWg/exec";
+    const url = saved || fallback;
+    setWebhookUrl(url);
+    if (!saved) localStorage.setItem("journal_webhook_url", url);
   }, []);
   function saveWebhookUrl() {
-    localStorage.setItem("journal_webhook_url", webhookUrl.trim());
+    const v = (webhookUrl || "").trim();
+    localStorage.setItem("journal_webhook_url", v);
     alert("保存しました（この端末のローカルに保存）");
   }
 
@@ -117,20 +120,17 @@ export default function JournalSorterApp() {
     if (!amt || amt <= 0) return [];
 
     if (mode === "expense") {
-      const entries = [
-        { side: "借方", account: expenseAccount, amount: taxSplit.base },
-      ];
+      const entries = [{ side: "借方", account: expenseAccount, amount: taxSplit.base }];
       if (taxSplit.tax > 0) {
         entries.push({ side: "借方", account: "租税公課（消費税等）", amount: taxSplit.tax });
       }
       entries.push({ side: "貸方", account: paymentCredit, amount: amt });
       return entries;
     } else {
-      const entries = [
+      return [
         { side: "借方", account: receiveDebit, amount: Number(amount) },
         { side: "貸方", account: incomeAccount, amount: Number(amount) },
       ];
-      return entries;
     }
   }
 
@@ -200,7 +200,6 @@ export default function JournalSorterApp() {
       "貸方科目",
       "貸方金額",
     ];
-
     const lines = [header.join(",")];
 
     rows.forEach((r) => {
@@ -230,15 +229,15 @@ export default function JournalSorterApp() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `journal_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `journal_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  // ======== GAS 連携部分 ========
+  // ======== GAS 連携 ========
   function buildSheetLines(targetRows) {
-    // スプレッドシート「事業」シートの 1レコード = 仕分け1行（借方/貸方のペア）
-    // 列構成: [日付, 摘要, 区分, 金額, 税込/税率, 借方科目, 借方金額, 貸方科目, 貸方金額, 手段, 送信時刻]
+    // 「事業」シートに出す1レコード = 仕分け1行（借方/貸方のペア）
+    // 列: [日付, 摘要, 区分, 金額, 税込/税率, 借方科目, 借方金額, 貸方科目, 貸方金額, 手段, 送信時刻]
     const lines = [];
     targetRows.forEach((r) => {
       const debits = r.entries.filter((e) => e.side === "借方");
@@ -265,40 +264,25 @@ export default function JournalSorterApp() {
     return lines;
   }
 
+  // ★ no-cors + text/plain に固定（確実に届く運用）
   async function postToGAS(lines) {
     if (!webhookUrl) {
       alert("WebアプリURLを設定してください");
       return { ok: false };
     }
-
-    // まず CORS で試し、失敗したら no-cors に自動フォールバック
     try {
-      const res = await fetch(webhookUrl, {
+      await fetch(webhookUrl, {
         method: "POST",
-        mode: "cors",
-        headers: { "Content-Type": "application/json" },
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ sheet: "事業", rows: lines }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await res.json().catch(() => ({}));
-      return { ok: true };
+      // no-cors は返事を読めない（opaque）→ 送れた前提でOK扱い
+      return { ok: true, opaque: true };
     } catch (e) {
-      console.warn("CORS で失敗 → no-cors で再試行", e);
-      try {
-        await fetch(webhookUrl, {
-          method: "POST",
-          mode: "no-cors",
-          // no-cors では simple header のみ使用
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ sheet: "事業", rows: lines }),
-        });
-        // opaque でレスポンスは読めないが、送れている前提でOK扱い
-        return { ok: true, opaque: true };
-      } catch (e2) {
-        console.error("no-cors でも失敗", e2);
-        alert("送信に失敗しました。Webアプリの公開設定（全員）、スクリプトの権限、URLが最新か確認してください。");
-        return { ok: false };
-      }
+      console.error(e);
+      alert("送信に失敗しました。Webアプリの公開範囲とURLを確認してください。");
+      return { ok: false };
     }
   }
 
@@ -319,7 +303,7 @@ export default function JournalSorterApp() {
     const result = await postToGAS(lines);
     if (result.ok) alert(`${rows.length}件送信しました`);
   }
-  // ======== /GAS 連携部分 ========
+  // ======== /GAS 連携 ========
 
   function fillTemplate(t) {
     if (t === "stationery") {
@@ -570,7 +554,7 @@ export default function JournalSorterApp() {
               <p>① 上で「支出」または「収入」を選び、日付/摘要/金額/科目/支払方法を入力して「追加」。</p>
               <p>② 「支出」は <strong>借方=費用 / 貸方=現金・普通預金・未払金</strong> を自動生成します。税込チェック時は内税を本体と消費税に自動按分（簡便法）。</p>
               <p>③ 「収入」は <strong>借方=現金/普通預金/売掛金 / 貸方=売上高等</strong> を自動生成します。</p>
-              <p>④ 仕分け一覧はCSVでダウンロード可能。<strong>「全件を事業シートへ送信」</strong>で GAS に一括送信できます。各行の「送信」ボタンで1件だけ送ることも可能。</p>
+              <p>④ 仕分け一覧はCSVでダウンロード可能。<strong>「全件を事業シートへ送信」</strong>で一括送信できます。各行の「送信」ボタンで1件だけ送ることも可能。</p>
               <p className="text-xs text-gray-500">※実務では税区分・インボイス・家事按分・固定資産計上など個別判断が必要な場面があります。本ツールは簡易版です。</p>
             </div>
           </details>
