@@ -1,0 +1,581 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+// かんたん仕分けアプリ（単一コンポーネント）
+// - 収入/支出を入力 → 借方/貸方を自動生成
+// - よく使う勘定科目をプリセット
+// - 支払方法に応じて相手科目（現金/普通預金/未払金）を自動判定
+// - CSVエクスポート、行の編集/削除、テンプレ即入力
+// - ★Google スプレッドシート（同一ブック内の「事業」シート）に送信できるように対応
+//   → Apps Script の Web アプリURL を設定すると、1行/全件の送信が可能
+//   → CORSエラー時は自動で no-cors 送信にフォールバックします
+
+const EXPENSE_ACCOUNTS = [
+  "旅費交通費",
+  "通信費",
+  "消耗品費",
+  "地代家賃",
+  "水道光熱費",
+  "広告宣伝費",
+  "租税公課",
+  "支払手数料",
+  "新聞図書費",
+  "雑費",
+];
+
+const INCOME_ACCOUNTS = ["売上高", "雑収入"];
+
+const PAYMENT_METHODS = [
+  { key: "cash", label: "現金", credit: "現金" },
+  { key: "bank", label: "銀行振込（普通預金）", credit: "普通預金" },
+  { key: "card", label: "クレジットカード", credit: "未払金" },
+];
+
+const RECEIVABLE_METHODS = [
+  { key: "cash", label: "現金受取", debit: "現金" },
+  { key: "bank", label: "銀行入金（普通預金）", debit: "普通預金" },
+  { key: "ar", label: "掛け（売掛金）", debit: "売掛金" },
+];
+
+function toYen(n) {
+  try {
+    return Number(n).toLocaleString("ja-JP");
+  } catch {
+    return n;
+  }
+}
+
+function todayISO() {
+  const d = new Date();
+  const tzOffset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - tzOffset * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function csvEscape(s) {
+  const str = String(s ?? "");
+  if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+    return '"' + str.replaceAll('"', '""') + '"';
+  }
+  return str;
+}
+
+export default function JournalSorterApp() {
+  const [mode, setMode] = useState("expense"); // "expense" | "income"
+  const [date, setDate] = useState(todayISO());
+  const [desc, setDesc] = useState("");
+  const [amount, setAmount] = useState("");
+  const [taxIn, setTaxIn] = useState(true); // 税込処理（簡易）
+  const [taxRate, setTaxRate] = useState(10); // 10%/8%/0%
+
+  const [expenseAccount, setExpenseAccount] = useState(EXPENSE_ACCOUNTS[2]);
+  const [payment, setPayment] = useState(PAYMENT_METHODS[0].key);
+
+  const [incomeAccount, setIncomeAccount] = useState(INCOME_ACCOUNTS[0]);
+  const [receiveMethod, setReceiveMethod] = useState(RECEIVABLE_METHODS[1].key);
+
+  const [rows, setRows] = useState([]);
+  const [editIndex, setEditIndex] = useState(-1);
+
+  // GAS 連携設定
+  const [webhookUrl, setWebhookUrl] = useState("");
+  useEffect(() => {
+    const saved = localStorage.getItem("journal_webhook_url");
+    const fallback = "https://script.google.com/macros/s/AKfycbyn6qnjwsaKbsT8-4u1GxVKTsa2-KYItgxOVl4ovlvZCPT7X5HGayNTJlyAY7PdGt1kSQ/exec";
+    setWebhookUrl(saved && saved.trim().length > 0 ? saved : fallback);
+  }, []);
+  function saveWebhookUrl() {
+    localStorage.setItem("journal_webhook_url", webhookUrl.trim());
+    alert("保存しました（この端末のローカルに保存）");
+  }
+
+  const paymentCredit = useMemo(() => {
+    return PAYMENT_METHODS.find((p) => p.key === payment)?.credit ?? "現金";
+  }, [payment]);
+
+  const receiveDebit = useMemo(() => {
+    return RECEIVABLE_METHODS.find((r) => r.key === receiveMethod)?.debit ?? "普通預金";
+  }, [receiveMethod]);
+
+  const taxSplit = useMemo(() => {
+    const amt = Number(amount || 0);
+    if (!taxIn || taxRate === 0) {
+      return { base: amt, tax: 0 };
+    }
+    const base = Math.round((amt * 100) / (100 + Number(taxRate)));
+    const tax = amt - base;
+    return { base, tax };
+  }, [amount, taxIn, taxRate]);
+
+  function clearInputs() {
+    setDesc("");
+    setAmount("");
+    setEditIndex(-1);
+  }
+
+  function buildEntries() {
+    const amt = Number(amount || 0);
+    if (!amt || amt <= 0) return [];
+
+    if (mode === "expense") {
+      const entries = [
+        { side: "借方", account: expenseAccount, amount: taxSplit.base },
+      ];
+      if (taxSplit.tax > 0) {
+        entries.push({ side: "借方", account: "租税公課（消費税等）", amount: taxSplit.tax });
+      }
+      entries.push({ side: "貸方", account: paymentCredit, amount: amt });
+      return entries;
+    } else {
+      const entries = [
+        { side: "借方", account: receiveDebit, amount: Number(amount) },
+        { side: "貸方", account: incomeAccount, amount: Number(amount) },
+      ];
+      return entries;
+    }
+  }
+
+  function addOrUpdateRow() {
+    const entries = buildEntries();
+    if (entries.length === 0) return;
+
+    const newRow = {
+      date,
+      desc,
+      mode,
+      amount: Number(amount),
+      taxIn,
+      taxRate,
+      expenseAccount,
+      paymentCredit,
+      incomeAccount,
+      receiveDebit,
+      entries,
+    };
+
+    if (editIndex >= 0) {
+      const cloned = rows.slice();
+      cloned[editIndex] = newRow;
+      setRows(cloned);
+      clearInputs();
+    } else {
+      setRows([newRow, ...rows]);
+      clearInputs();
+    }
+  }
+
+  function editRow(i) {
+    const r = rows[i];
+    if (!r) return;
+    setDate(r.date);
+    setDesc(r.desc);
+    setAmount(String(r.amount));
+    setMode(r.mode);
+    setTaxIn(r.taxIn);
+    setTaxRate(r.taxRate);
+    setExpenseAccount(r.expenseAccount);
+    setIncomeAccount(r.incomeAccount);
+    const payKey = PAYMENT_METHODS.find((p) => p.credit === r.paymentCredit)?.key ?? "cash";
+    setPayment(payKey);
+    const recvKey = RECEIVABLE_METHODS.find((p) => p.debit === r.receiveDebit)?.key ?? "bank";
+    setReceiveMethod(recvKey);
+    setEditIndex(i);
+  }
+
+  function deleteRow(i) {
+    const cloned = rows.slice();
+    cloned.splice(i, 1);
+    setRows(cloned);
+  }
+
+  function downloadCSV() {
+    const header = [
+      "日付",
+      "摘要",
+      "区分",
+      "金額",
+      "税込処理",
+      "税率",
+      "借方科目",
+      "借方金額",
+      "貸方科目",
+      "貸方金額",
+    ];
+
+    const lines = [header.join(",")];
+
+    rows.forEach((r) => {
+      const debits = r.entries.filter((e) => e.side === "借方");
+      const credits = r.entries.filter((e) => e.side === "貸方");
+      const max = Math.max(debits.length, credits.length);
+      for (let i = 0; i < max; i++) {
+        const d = debits[i] ?? { account: "", amount: "" };
+        const c = credits[i] ?? { account: "", amount: "" };
+        const cols = [
+          r.date,
+          r.desc,
+          r.mode === "expense" ? "支出" : "収入",
+          r.amount,
+          r.taxIn ? "税込" : "税抜",
+          r.taxRate + "%",
+          d.account,
+          d.amount,
+          c.account,
+          c.amount,
+        ].map(csvEscape);
+        lines.push(cols.join(","));
+      }
+    });
+
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `journal_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ======== GAS 連携部分 ========
+  function buildSheetLines(targetRows) {
+    // スプレッドシート「事業」シートの 1レコード = 仕分け1行（借方/貸方のペア）
+    // 列構成: [日付, 摘要, 区分, 金額, 税込/税率, 借方科目, 借方金額, 貸方科目, 貸方金額, 手段, 送信時刻]
+    const lines = [];
+    targetRows.forEach((r) => {
+      const debits = r.entries.filter((e) => e.side === "借方");
+      const credits = r.entries.filter((e) => e.side === "貸方");
+      const max = Math.max(debits.length, credits.length);
+      for (let i = 0; i < max; i++) {
+        const d = debits[i] ?? { account: "", amount: "" };
+        const c = credits[i] ?? { account: "", amount: "" };
+        lines.push([
+          r.date,
+          r.desc,
+          r.mode === "expense" ? "支出" : "収入",
+          r.amount,
+          r.taxIn ? `税込(${r.taxRate}%)` : "税抜",
+          d.account,
+          d.amount,
+          c.account,
+          c.amount,
+          r.mode === "expense" ? r.paymentCredit : r.receiveDebit,
+          new Date().toLocaleString("ja-JP"),
+        ]);
+      }
+    });
+    return lines;
+  }
+
+  async function postToGAS(lines) {
+    if (!webhookUrl) {
+      alert("WebアプリURLを設定してください");
+      return { ok: false };
+    }
+
+    // まず CORS で試し、失敗したら no-cors に自動フォールバック
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheet: "事業", rows: lines }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await res.json().catch(() => ({}));
+      return { ok: true };
+    } catch (e) {
+      console.warn("CORS で失敗 → no-cors で再試行", e);
+      try {
+        await fetch(webhookUrl, {
+          method: "POST",
+          mode: "no-cors",
+          // no-cors では simple header のみ使用
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ sheet: "事業", rows: lines }),
+        });
+        // opaque でレスポンスは読めないが、送れている前提でOK扱い
+        return { ok: true, opaque: true };
+      } catch (e2) {
+        console.error("no-cors でも失敗", e2);
+        alert("送信に失敗しました。Webアプリの公開設定（全員）、スクリプトの権限、URLが最新か確認してください。");
+        return { ok: false };
+      }
+    }
+  }
+
+  async function sendOne(i) {
+    const r = rows[i];
+    if (!r) return;
+    const lines = buildSheetLines([r]);
+    const result = await postToGAS(lines);
+    if (result.ok) alert("1件送信しました");
+  }
+
+  async function sendAll() {
+    if (rows.length === 0) {
+      alert("送信する仕分けがありません");
+      return;
+    }
+    const lines = buildSheetLines(rows);
+    const result = await postToGAS(lines);
+    if (result.ok) alert(`${rows.length}件送信しました`);
+  }
+  // ======== /GAS 連携部分 ========
+
+  function fillTemplate(t) {
+    if (t === "stationery") {
+      setMode("expense");
+      setDate(todayISO());
+      setDesc("コンビニで文具購入");
+      setAmount("1200");
+      setExpenseAccount("消耗品費");
+      setPayment("cash");
+      setTaxIn(true);
+      setTaxRate(10);
+    } else if (t === "phone") {
+      setMode("expense");
+      setDate(todayISO());
+      setDesc("スマホ通信料");
+      setAmount("4980");
+      setExpenseAccount("通信費");
+      setPayment("bank");
+      setTaxIn(true);
+      setTaxRate(10);
+    } else if (t === "salesBank") {
+      setMode("income");
+      setDate(todayISO());
+      setDesc("売上入金（銀行）");
+      setAmount("10000");
+      setIncomeAccount("売上高");
+      setReceiveMethod("bank");
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900 p-6">
+      <div className="max-w-5xl mx-auto space-y-6">
+        <header className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">かんたん仕分けアプリ</h1>
+          <div className="text-sm text-gray-500">単式入力→複式仕分け / CSV & GAS連携</div>
+        </header>
+
+        {/* GAS連携設定カード */}
+        <div className="bg-white rounded-2xl shadow p-4 md:p-6">
+          <h2 className="text-lg font-semibold mb-3">Googleスプレッドシート連携</h2>
+          <div className="grid md:grid-cols-[1fr_auto] gap-3">
+            <input
+              type="url"
+              placeholder="Apps Script WebアプリURL（https://script.google.com/.../exec）"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              className="rounded-xl border px-3 py-2"
+            />
+            <button onClick={saveWebhookUrl} className="px-4 py-2 rounded-xl border">URLを保存</button>
+          </div>
+          <div className="mt-3 text-xs text-gray-500 leading-relaxed">
+            同じスプレッドシートの <strong>「事業」</strong> シートに追記します。Webアプリは <strong>「全員（匿名含む）」</strong> または <strong>「リンクを知っている全員」</strong> に公開し、最新バージョンの URL（/exec）を使用してください。
+          </div>
+        </div>
+
+        {/* 入力カード */}
+        <div className="bg-white rounded-2xl shadow p-4 md:p-6">
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setMode("expense")}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                mode === "expense" ? "bg-gray-900 text-white" : "bg-white"
+              }`}
+            >支出の登録</button>
+            <button
+              onClick={() => setMode("income")}
+              className={`px-3 py-1.5 rounded-full text-sm border ${
+                mode === "income" ? "bg-gray-900 text-white" : "bg-white"
+              }`}
+            >収入の登録</button>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm">日付</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-xl border px-3 py-2" />
+            </div>
+
+            <div className="space-y-2 md:col-span-1">
+              <label className="text-sm">摘要（メモ）</label>
+              <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="用途や相手先など"
+                className="w-full rounded-xl border px-3 py-2" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm">金額（円）</label>
+              <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2" placeholder="0" />
+            </div>
+
+            {mode === "expense" ? (
+              <div className="space-y-2">
+                <label className="text-sm">費用の勘定科目</label>
+                <select value={expenseAccount} onChange={(e) => setExpenseAccount(e.target.value)} className="w-full rounded-xl border px-3 py-2">
+                  {EXPENSE_ACCOUNTS.map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm">収益の勘定科目</label>
+                <select value={incomeAccount} onChange={(e) => setIncomeAccount(e.target.value)} className="w-full rounded-xl border px-3 py-2">
+                  {INCOME_ACCOUNTS.map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {mode === "expense" ? (
+              <div className="space-y-2">
+                <label className="text-sm">支払方法（相手科目）</label>
+                <select value={payment} onChange={(e) => setPayment(e.target.value)} className="w-full rounded-xl border px-3 py-2">
+                  {PAYMENT_METHODS.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+                <div className="text-xs text-gray-500">貸方は自動で「{paymentCredit}」になります</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm">受取方法（借方）</label>
+                <select value={receiveMethod} onChange={(e) => setReceiveMethod(e.target.value)} className="w-full rounded-xl border px-3 py-2">
+                  {RECEIVABLE_METHODS.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
+                <div className="text-xs text-gray-500">借方は自動で「{receiveDebit}」になります</div>
+              </div>
+            )}
+
+            {mode === "expense" && (
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm">消費税の扱い</label>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={taxIn} onChange={(e) => setTaxIn(e.target.checked)} />
+                    <span className="text-sm">税込で入力（簡便法）</span>
+                  </label>
+                  <select value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))} className="rounded-xl border px-2 py-1 text-sm">
+                    <option value={10}>10%</option>
+                    <option value={8}>8%（軽減）</option>
+                    <option value={0}>0%（非課税/不課税）</option>
+                  </select>
+                  {taxIn && (
+                    <div className="text-xs text-gray-500">内税: 本体 {toYen(taxSplit.base)} 円 / 消費税 {toYen(taxSplit.tax)} 円</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button onClick={addOrUpdateRow} className="px-4 py-2 rounded-xl bg-gray-900 text-white shadow">{editIndex >= 0 ? "更新" : "追加"}</button>
+            <button onClick={clearInputs} className="px-4 py-2 rounded-xl border">クリア</button>
+            <div className="ml-auto flex flex-wrap gap-2 text-sm">
+              <span className="text-gray-500">テンプレ:</span>
+              <button onClick={() => fillTemplate("stationery")} className="px-3 py-1 rounded-full border">文具（現金）</button>
+              <button onClick={() => fillTemplate("phone")} className="px-3 py-1 rounded-full border">通信費（口座）</button>
+              <button onClick={() => fillTemplate("salesBank")} className="px-3 py-1 rounded-full border">売上入金（銀行）</button>
+            </div>
+          </div>
+        </div>
+
+        {/* 仕分け結果 */}
+        <div className="bg-white rounded-2xl shadow p-4 md:p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="text-lg font-semibold">仕分け一覧</h2>
+            <div className="ml-auto flex gap-2">
+              <button onClick={downloadCSV} className="px-3 py-2 rounded-xl border">CSVエクスポート</button>
+              <button onClick={sendAll} className="px-3 py-2 rounded-xl border">全件を事業シートへ送信</button>
+              <button onClick={() => setRows([])} className="px-3 py-2 rounded-xl border">全削除</button>
+            </div>
+          </div>
+
+          {rows.length === 0 ? (
+            <div className="text-sm text-gray-500">まだ仕分けはありません。上のフォームから追加してください。</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-700">
+                    <th className="px-3 py-2 text-left">日付</th>
+                    <th className="px-3 py-2 text-left">摘要</th>
+                    <th className="px-3 py-2 text-left">区分</th>
+                    <th className="px-3 py-2 text-right">金額</th>
+                    <th className="px-3 py-2 text-left">借方</th>
+                    <th className="px-3 py-2 text-right">金額</th>
+                    <th className="px-3 py-2 text-left">貸方</th>
+                    <th className="px-3 py-2 text-right">金額</th>
+                    <th className="px-3 py-2">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    const debits = r.entries.filter((e) => e.side === "借方");
+                    const credits = r.entries.filter((e) => e.side === "貸方");
+                    const max = Math.max(debits.length, credits.length);
+                    return (
+                      <React.Fragment key={i}>
+                        {Array.from({ length: max }).map((_, line) => {
+                          const d = debits[line];
+                          const c = credits[line];
+                          return (
+                            <tr key={line} className="border-b last:border-b-0">
+                              {line === 0 ? (
+                                <>
+                                  <td rowSpan={max} className="px-3 py-2 align-top">{r.date}</td>
+                                  <td rowSpan={max} className="px-3 py-2 align-top">{r.desc}</td>
+                                  <td rowSpan={max} className="px-3 py-2 align-top">{r.mode === "expense" ? "支出" : "収入"}</td>
+                                  <td rowSpan={max} className="px-3 py-2 align-top text-right">{toYen(r.amount)}</td>
+                                </>
+                              ) : null}
+
+                              <td className="px-3 py-2">{d?.account ?? ""}</td>
+                              <td className="px-3 py-2 text-right">{d?.amount ? toYen(d.amount) : ""}</td>
+                              <td className="px-3 py-2">{c?.account ?? ""}</td>
+                              <td className="px-3 py-2 text-right">{c?.amount ? toYen(c.amount) : ""}</td>
+
+                              {line === 0 ? (
+                                <td rowSpan={max} className="px-3 py-2 align-top">
+                                  <div className="flex flex-col gap-1">
+                                    <button onClick={() => editRow(i)} className="px-2 py-1 rounded-lg border text-xs">編集</button>
+                                    <button onClick={() => deleteRow(i)} className="px-2 py-1 rounded-lg border text-xs">削除</button>
+                                    <button onClick={() => sendOne(i)} className="px-2 py-1 rounded-lg border text-xs">送信</button>
+                                  </div>
+                                </td>
+                              ) : null}
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 使い方 */}
+        <div className="text-sm text-gray-600">
+          <details className="bg-white rounded-2xl shadow p-4">
+            <summary className="cursor-pointer font-medium">使い方 / 仕組み（クリックで開く）</summary>
+            <div className="mt-3 space-y-2 leading-relaxed">
+              <p>① 上で「支出」または「収入」を選び、日付/摘要/金額/科目/支払方法を入力して「追加」。</p>
+              <p>② 「支出」は <strong>借方=費用 / 貸方=現金・普通預金・未払金</strong> を自動生成します。税込チェック時は内税を本体と消費税に自動按分（簡便法）。</p>
+              <p>③ 「収入」は <strong>借方=現金/普通預金/売掛金 / 貸方=売上高等</strong> を自動生成します。</p>
+              <p>④ 仕分け一覧はCSVでダウンロード可能。<strong>「全件を事業シートへ送信」</strong>で GAS に一括送信できます。各行の「送信」ボタンで1件だけ送ることも可能。</p>
+              <p className="text-xs text-gray-500">※実務では税区分・インボイス・家事按分・固定資産計上など個別判断が必要な場面があります。本ツールは簡易版です。</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+}
