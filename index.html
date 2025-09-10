@@ -384,36 +384,67 @@ function downloadCSV(){
   const a = document.createElement('a'); a.href=url; a.download=`journal_${todayISO()}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
+// 表示用のカード名（最初は固定でOK。必要になったら入力欄を作って置き換える）
+function currentCardLabel() {
+  return "VISA末1234";  // ←ここはあなたのカード名/末4桁などに自由に変更OK
+}
+
+// 請求月の計算（例：末締→翌月請求。15日締などにしたい時は第2引数を15に）
+function calcBillingMonth(isoDate /* 'YYYY-MM-DD' */, closingDay = 31) {
+  const d = new Date(isoDate);
+  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (closingDay === 31) {                 // 末締→翌月
+    const nm = new Date(y, m + 1, 1);
+    return nm.toISOString().slice(0, 7);   // 'YYYY-MM'
+  }
+  const add = day <= closingDay ? 1 : 2;   // 15日締の例
+  const nm = new Date(y, m + add, 1);
+  return nm.toISOString().slice(0, 7);
+}
 
 /* ===== GAS送信 ===== */
-function buildSheetLines(targetRows){
-  const out=[];
-  targetRows.forEach(r=>{
-    const debits  = r.entries.filter(e=>e.side==='借方');
-    const credits = r.entries.filter(e=>e.side==='貸方');
+// 「事業」シートに送る行を作る（★カード / ★請求月 を追加）
+function buildSheetLines(targetRows) {
+  // 列構成: [日付, 摘要, 区分, 金額, 税込/税率, 借方科目, 借方金額, 貸方科目, 貸方金額, 手段, 送信時刻, ★カード, ★請求月]
+  const out = [];
+  targetRows.forEach((r) => {
+    const debits  = r.entries.filter((e) => e.side === "借方");
+    const credits = r.entries.filter((e) => e.side === "貸方");
     const max = Math.max(debits.length, credits.length);
-    for(let i=0;i<max;i++){
-      const d=debits[i]||{account:"",amount:""};
-      const c=credits[i]||{account:"",amount:""};
+    for (let i = 0; i < max; i++) {
+      const d = debits[i]  || { account: "", amount: "" };
+      const c = credits[i] || { account: "", amount: "" };
+
+      // 支払手段の表示（貸方：現金/普通預金/未払金、収入の時は借方：現金/普通預金/売掛金）
+      const methodLabel = r.mode === "expense"
+        ? (PAYMENT_METHODS.find(p => p.key === r.payment)?.credit || "現金")
+        : (RECEIVABLE_METHODS.find(x => x.key === r.receive)?.debit || "普通預金");
+
+      // カード利用時だけ「カード」「請求月」を付ける
+      const isCard = (r.mode === "expense") && ((PAYMENT_METHODS.find(p => p.key === r.payment)?.key) === "card");
+      const cardCol = isCard ? currentCardLabel() : "";
+      const billCol = isCard ? calcBillingMonth(r.date, 31) : ""; // 末締→翌月の例
+
       out.push([
-        r.date,
-        r.desc,
-        r.mode==='expense'?'支出':'収入',
-        r.amount,
-        r.taxIn?`税込(${r.taxRate}%)`:'税抜',
-        d.account,
-        d.amount,
-        c.account,
-        c.amount,
-        r.mode==='expense'
-          ? (PAYMENT_METHODS.find(p=>p.key===r.payment)?.credit||'現金')
-          : (RECEIVABLE_METHODS.find(x=>x.key===r.receive)?.debit||'普通預金'),
-        new Date().toLocaleString('ja-JP')
+        r.date,                                            // A: 日付
+        r.desc,                                            // B: 摘要
+        r.mode === "expense" ? "支出" : "収入",            // C: 区分
+        r.amount,                                          // D: 金額
+        r.taxIn ? `税込(${r.taxRate}%)` : "税抜",         // E: 税込/税率
+        d.account,                                         // F: 借方科目
+        d.amount,                                          // G: 借方金額
+        c.account,                                         // H: 貸方科目
+        c.amount,                                          // I: 貸方金額
+        methodLabel,                                       // J: 手段
+        new Date().toLocaleString("ja-JP"),                // K: 送信時刻
+        cardCol,                                           // L: ★カード
+        billCol                                            // M: ★請求月(YYYY-MM)
       ]);
     }
   });
   return out;
 }
+
 
 async function postToGAS(lines){
   const url = $('#webhook').value.trim();
