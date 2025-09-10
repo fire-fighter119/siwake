@@ -80,7 +80,7 @@ export default function JournalSorterApp() {
   useEffect(() => {
     const saved = (localStorage.getItem("journal_webhook_url") || "").trim();
     const fallback =
-      "https://script.google.com/macros/s/AKfycbwlM0VxQts9DNrT4hiOS2UUIOeGWNWxrK_Gb8wNFYx9bVrOtNzcCmvzglip5e_4Tm5vWg/exec";
+      "https://script.google.com/macros/s/AKfycbx4ThxklRmYu3UnpW9WWbNKX4_VD210HFPnstDxjmoyfMSU9VF_HAbQPXL1kIk4RZ2SSA/exec";
     const url = saved || fallback;
     setWebhookUrl(url);
     if (!saved) localStorage.setItem("journal_webhook_url", url);
