@@ -124,6 +124,7 @@
       <span class="right"></span>
       <button class="btn" id="csvBtn">CSVエクスポート</button>
       <button class="btn" id="sendAllBtn">全件を事業へ送信</button>
+      <button class="btn" id="addSettleBtn">未払金の消込を追加</button>
       <button class="btn" id="clearAllBtn">全削除</button>
     </div>
 
@@ -171,6 +172,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const savedUrl = localStorage.getItem('journal_webhook_url') || '';
   $('#webhook').value = savedUrl;
   $('#savedNote').textContent = savedUrl ? 'この端末に保存済み' : '';
+　$('#addSettleBtn').onclick = addSettlementPrompt;
 
   $('#saveUrlBtn').onclick = () => {
     localStorage.setItem('journal_webhook_url', $('#webhook').value.trim());
@@ -418,6 +420,42 @@ async function sendAll(){
   const res = await postToGAS(lines);
   if (res.ok) alert(`${ROWS.length}件送信しました（シート「事業」を確認）`);
 }
+function addSettlementPrompt(){
+  const defaultCard = currentCardLabel();            // 例: "楽天カード末1234"
+  const today = todayISO();
+  const y = new Date().getFullYear(), m = new Date().getMonth(); // 先月を初期値に
+  const prevMonth = new Date(y, m, 1); prevMonth.setMonth(m-1);
+  const ym = prevMonth.toISOString().slice(0,7);     // "YYYY-MM"
+
+  const card = prompt('カード名（★カード列用ではなく摘要表示用）', defaultCard) || '';
+  const bill = prompt('請求月（YYYY-MM）', ym) || '';
+  const draw = prompt('引落日（YYYY-MM-DD）', today) || '';
+  const amtStr = prompt('引落金額（請求月合計）', '0') || '0';
+  const amount = Number(amtStr);
+  if (!amount || amount <= 0) return alert('金額が不正です');
+
+  // 消込1行を作成（借：未払金 / 貸：普通預金、税は使わない）
+  const row = {
+    date: draw,
+    desc: `カード引落（${card} ${bill}分）`,
+    mode: 'expense',
+    amount,
+    taxIn: false,
+    taxRate: 0,
+    expenseAccount: '未払金',
+    payment: 'bank',              // 相手科目＝普通預金
+    incomeAccount: '',
+    receive: '',
+    entries: [
+      { side:'借方', account:'未払金', amount },
+      { side:'貸方', account:'普通預金', amount }
+    ]
+  };
+  ROWS.unshift(row);
+  render();
+  alert('消込行を追加しました（一覧→送信でシートへ反映）');
+}
+
 </script>
 </body>
 </html>
